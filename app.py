@@ -154,5 +154,18 @@ Marginal: +{värde - match_price} kr
 ⏰ {datum}"""
                     fyndarkiv.append(f'<a href="{annons_url}" target="_blank">{resultat.replace(chr(10), "<br>")}</a>')
                     skicka_telegram(resultat)
-                    result
-                  
+                    result_count += 1
+                time.sleep(0.3)
+            time.sleep(0.5)
+
+        if result_count == 0:
+            skicka_telegram("Inga nya fynd denna gång.")
+
+        skicka_telegram(f"✅ Autobot färdig. {result_count} fynd hittade efter att ha analyserat {testade_count} annonser.")
+        return "Autobot kördes utan fel."
+    except Exception as e:
+        print(f"[FEL] Ett fel inträffade i autobot: {e}")
+        return f"Fel: {str(e)}"
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=10000)
