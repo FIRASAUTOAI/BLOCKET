@@ -1,4 +1,4 @@
-# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning och marginalfilter
+# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning och extern värdering
 
 from flask import Flask, render_template, request, redirect, url_for, session
 import requests
@@ -66,6 +66,22 @@ def skicka_telegram(meddelande):
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
     requests.post(url, data=data)
 
+def hamta_varde_carinfo(regnummer):
+    try:
+        url = f"https://www.car.info/sv-se/license-plate/SWE/{regnummer}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        match = soup.find(string=re.compile("Värdeintervall"))
+        if match:
+            siffror = re.findall(r'\d+', match)
+            if len(siffror) >= 2:
+                värde = (int(siffror[0]) + int(siffror[1])) // 2
+                return värde
+    except:
+        pass
+    return None
+
 @app.route("/search", methods=["POST"])
 def search():
     if not session.get('logged_in'):
@@ -81,7 +97,7 @@ def autobot():
         soup = BeautifulSoup(response.text, 'html.parser')
         listings = soup.find_all("a", class_="Link-sc-__sc-1s9xv6a-0")
 
-        min_margin = 20000
+        min_margin = 15000
         result_count = 0
 
         for listing in listings:
@@ -91,6 +107,7 @@ def autobot():
                 annons_url = "https://www.blocket.se" + href
                 annons_response = requests.get(annons_url, headers=headers)
                 annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
+
                 pris_tag = annons_soup.find("div", class_=re.compile("Price__StyledPrice"))
                 if not pris_tag:
                     continue
@@ -99,28 +116,40 @@ def autobot():
                 except:
                     continue
 
-                referens_url = "https://www.blocket.se/annonser/hela_sverige/fordon/bilar?pe=2"
-                ref_response = requests.get(referens_url, headers=headers)
-                ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
-                ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice"))
+                regtext = annons_soup.get_text()
+                regnummer_match = re.search(r'([A-Z]{3}\d{3})', regtext)
 
-                prices = []
-                for item in ref_listings:
-                    try:
-                        price = int(re.sub(r'[^0-9]', '', item.text))
-                        prices.append(price)
-                        if len(prices) >= 7:
-                            break
-                    except:
-                        continue
+                huvudtitel = title.split()[0:3]  # t.ex. ['volvo', 'v60', 'd4']
+                sökfras = " ".join(huvudtitel)
 
-                if prices:
-                    avg_price = sum(prices) // len(prices)
-                    marginal = avg_price - match_price
-                    if marginal >= min_margin:
-                        resultat = f"💰 Fynd hittat!\n{title}\nPris: {match_price} kr\nRef: {avg_price} kr\nMarginal: +{marginal} kr\n{annons_url}"
-                        skicka_telegram(resultat)
-                        result_count += 1
+                värde = None
+                if regnummer_match:
+                    regnummer = regnummer_match.group(1)
+                    värde = hamta_varde_carinfo(regnummer)
+
+                if not värde:
+                    # Fallback till Blocket-jämförelse
+                    referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&pe=2"
+                    ref_response = requests.get(referens_url, headers=headers)
+                    ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
+                    ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice"))
+
+                    prices = []
+                    for item in ref_listings:
+                        try:
+                            price = int(re.sub(r'[^0-9]', '', item.text))
+                            prices.append(price)
+                            if len(prices) >= 7:
+                                break
+                        except:
+                            continue
+                    if prices:
+                        värde = sum(prices) // len(prices)
+
+                if värde and värde - match_price >= min_margin:
+                    resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
+                    skicka_telegram(resultat)
+                    result_count += 1
 
                 time.sleep(1)
 
