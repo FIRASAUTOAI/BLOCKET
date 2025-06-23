@@ -14,7 +14,10 @@ TELEGRAM_BOT_TOKEN = '7548627749:AAHuRgWJLgwh-Yk-PJHFAmRhmCfKfY0hAow'
 TELEGRAM_CHAT_ID = '7819614595'
 
 fyndarkiv = []
-testade_annons_ids = set()
+from datetime import datetime
+
+fyndarkiv = []
+testade_annons_ids = set()  # Nollställs vid varje körning
 
 @app.route("/", methods=["GET", "POST"])
 def login():
@@ -105,18 +108,18 @@ def autobot():
                 regnummer_match = re.search(r'([A-Z]{3}\d{3})', pris_text)
 
                 nyckelord = session.get('custom_keywords', '').lower().split(',') if session.get('custom_keywords') else [
-    "volvo", "bmw", "audi", "vw", "mercedes", "mazda", "toyota", "skoda", "peugeot", "citroen", "ford", "nissan", "kia", "hyundai", "renault", "honda", "opel", "seat", "fiat", "subaru", "suzuki", "chevrolet", "jeep", "dacia", "lexus", "tesla",
+    "volvo", "bmw", "audi", "vw", "volkswagen", "mercedes", "mazda", "toyota", "skoda", "peugeot", "citroen", "ford", "nissan", "kia", "hyundai", "renault", "honda", "opel", "seat", "fiat", "subaru", "suzuki", "chevrolet", "jeep", "dacia", "lexus", "tesla",
     "v40", "v50", "v60", "v70", "s60", "s80", "golf", "passat", "a1", "a3", "a4", "a5", "a6", "d2", "d3", "d4", "d5", "tdi", "tsi", "tce"
 ]
-                huvudtitel = [ord for ord in title.split() if ord in nyckelord]
-                if not huvudtitel:
-                    continue
+                huvudtitel = title.split()
                 sökfras = " ".join(huvudtitel)
 
                 värde = None
                 
                 if not värde:
                     referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&f=dealer"
+                    print(f'[DEBUG] Sökfras: {sökfras}')
+                    print(f'[DEBUG] Referens-URL: {referens_url}')
                     ref_response = requests.get(referens_url, headers=headers)
                     ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
                     ref_listings = ref_soup.find_all("div", class_=re.compile("Price"))
@@ -131,10 +134,22 @@ def autobot():
                         except:
                             continue
                     if prices:
+                        print(f'[DEBUG] Referenspriser: {prices}')
                         värde = sum(prices) // len(prices)
+                    else:
+                        print('[DEBUG] Inga referenspriser hittades – använder fallbackvärde 0')
+                        värde = 0
 
-                if värde and värde - match_price >= min_margin:
-                    resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
+                if värde > 0 and värde - match_price >= min_margin:
+                    from datetime import datetime
+                    datum = datetime.now().strftime('%Y-%m-%d %H:%M')
+                    resultat = f"💰 Fynd hittat!
+{sökfras}
+Pris: {match_price} kr
+Marknadsvärde: {värde} kr
+Marginal: +{värde - match_price} kr
+{annons_url}
+⏰ {datum}"
                     fyndarkiv.append(f'<a href="{annons_url}" target="_blank">{resultat.replace(chr(10), "<br>")}</a>')
                     skicka_telegram(resultat)
                     result_count += 1
