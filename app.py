@@ -1,4 +1,4 @@
-# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning och extern värdering
+# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning, extern värdering och fyndarkiv
 
 from flask import Flask, render_template, request, redirect, url_for, session
 import requests
@@ -12,6 +12,8 @@ app.secret_key = 'superhemligt_losen'
 
 TELEGRAM_BOT_TOKEN = '7548627749:AAHuRgWJLgwh-Yk-PJHFAmRhmCfKfY0hAow'
 TELEGRAM_CHAT_ID = '7819614595'
+
+fyndarkiv = []  # Enkla logglistan
 
 @app.route("/", methods=["GET", "POST"])
 def login():
@@ -54,9 +56,16 @@ def home():
             Nuvarande årsmodell: <input type="number" name="current_year"><br>
             <input type="submit" value="Sök">
         </form>
+        <h3><a href="/fynd">📦 Visa fyndarkiv</a></h3>
     </body>
     </html>
     '''
+
+@app.route("/fynd")
+def visa_fyndarkiv():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return '<br>'.join(fyndarkiv) or "Inga fynd har loggats än."
 
 def likhet(a, b):
     return SequenceMatcher(None, a, b).ratio()
@@ -92,66 +101,72 @@ def search():
 def autobot():
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        url = "https://www.blocket.se/annonser/hela_sverige/fordon/bilar"
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        listings = soup.find_all("a", class_="Link-sc-__sc-1s9xv6a-0")
-
         min_margin = 15000
         result_count = 0
 
-        for listing in listings:
-            href = listing.get("href")
-            title = listing.text.lower()
-            if href and "/annons/" in href:
-                annons_url = "https://www.blocket.se" + href
-                annons_response = requests.get(annons_url, headers=headers)
-                annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
+        for page in range(1, 21):
+            url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?page={page}"
+            response = requests.get(url, headers=headers)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            listings = soup.find_all("a", class_="Link-sc-__sc-1s9xv6a-0")
 
-                pris_tag = annons_soup.find("div", class_=re.compile("Price__StyledPrice"))
-                if not pris_tag:
-                    continue
-                try:
-                    match_price = int(re.sub(r'[^0-9]', '', pris_tag.text))
-                except:
-                    continue
+            for listing in listings:
+                href = listing.get("href")
+                title = listing.text.lower()
+                if href and "/annons/" in href:
+                    annons_url = "https://www.blocket.se" + href
+                    annons_response = requests.get(annons_url, headers=headers)
+                    annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
 
-                regtext = annons_soup.get_text()
-                regnummer_match = re.search(r'([A-Z]{3}\d{3})', regtext)
+                    pris_tag = annons_soup.find("div", class_=re.compile("Price__StyledPrice"))
+                    if not pris_tag:
+                        continue
+                    try:
+                        match_price = int(re.sub(r'[^0-9]', '', pris_tag.text))
+                    except:
+                        continue
 
-                huvudtitel = title.split()[0:3]  # t.ex. ['volvo', 'v60', 'd4']
-                sökfras = " ".join(huvudtitel)
+                    regtext = annons_soup.get_text()
+                    regnummer_match = re.search(r'([A-Z]{3}\d{3})', regtext)
 
-                värde = None
-                if regnummer_match:
-                    regnummer = regnummer_match.group(1)
-                    värde = hamta_varde_carinfo(regnummer)
+                    huvudtitel = []
+                    for ord in title.split():
+                        if ord in ["volvo", "bmw", "audi", "vw", "mercedes", "v60", "v70", "golf", "passat", "a3", "a4", "a5", "d3", "d4", "tdi", "d5"]:
+                            huvudtitel.append(ord)
+                    if not huvudtitel:
+                        continue
+                    sökfras = " ".join(huvudtitel)
 
-                if not värde:
-                    # Fallback till Blocket-jämförelse
-                    referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&pe=2"
-                    ref_response = requests.get(referens_url, headers=headers)
-                    ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
-                    ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice"))
+                    värde = None
+                    if regnummer_match:
+                        regnummer = regnummer_match.group(1)
+                        värde = hamta_varde_carinfo(regnummer)
 
-                    prices = []
-                    for item in ref_listings:
-                        try:
-                            price = int(re.sub(r'[^0-9]', '', item.text))
-                            prices.append(price)
-                            if len(prices) >= 7:
-                                break
-                        except:
-                            continue
-                    if prices:
-                        värde = sum(prices) // len(prices)
+                    if not värde:
+                        referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&pe=2"
+                        ref_response = requests.get(referens_url, headers=headers)
+                        ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
+                        ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice"))
 
-                if värde and värde - match_price >= min_margin:
-                    resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
-                    skicka_telegram(resultat)
-                    result_count += 1
+                        prices = []
+                        for item in ref_listings:
+                            try:
+                                price = int(re.sub(r'[^0-9]', '', item.text))
+                                prices.append(price)
+                                if len(prices) >= 7:
+                                    break
+                            except:
+                                continue
+                        if prices:
+                            värde = sum(prices) // len(prices)
 
-                time.sleep(1)
+                    if värde and värde - match_price >= min_margin:
+                        resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
+                        fyndarkiv.append(resultat)
+                        skicka_telegram(resultat)
+                        result_count += 1
+
+                    time.sleep(1)
 
         if result_count == 0:
             skicka_telegram("Inga nya fynd denna gång.")
@@ -162,3 +177,4 @@ def autobot():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
+    
