@@ -1,15 +1,18 @@
-# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med marginalfilter och lösenordsskydd
+# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning och marginalfilter
 
 from flask import Flask, render_template, request, redirect, url_for, session
 import requests
 from bs4 import BeautifulSoup
 import re
 import time
+from difflib import SequenceMatcher
 
 app = Flask(__name__)
-app.secret_key = 'superhemligt_losen'  # Ändra detta till ett starkt lösenord
+app.secret_key = 'superhemligt_losen'
 
-# Inloggning
+TELEGRAM_BOT_TOKEN = '7548627749:AAHuRgWJLgwh-Yk-PJHFAmRhmCfKfY0hAow'
+TELEGRAM_CHAT_ID = '7819614595'
+
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -55,36 +58,32 @@ def home():
     </html>
     '''
 
-@app.route("/search", methods=["POST"])
-def search():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
+def likhet(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
+def skicka_telegram(meddelande):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
+    requests.post(url, data=data)
+
+@app.route("/autobot")
+def autobot():
     try:
-        brand = request.form.get("brand", "").lower()
-        model = request.form.get("model", "").lower()
-        max_price = int(request.form.get("max_price") or 0)
-        max_mileage = int(request.form.get("max_mileage") or 999999)
-        min_year = int(request.form.get("min_year") or 0)
-        current_mileage = int(request.form.get("current_mileage") or 0)
-        current_year = int(request.form.get("current_year") or 0)
-        min_margin = 25000
-
         headers = {"User-Agent": "Mozilla/5.0"}
-
         url = "https://www.blocket.se/annonser/hela_sverige/fordon/bilar"
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         listings = soup.find_all("a", class_="Link-sc-__sc-1s9xv6a-0")
 
-        results = []
+        min_margin = 25000
+        result_count = 0
+
         for listing in listings:
             href = listing.get("href")
             title = listing.text.lower()
-            if href and "/annons/" in href and (brand in title or model in title):
+            if href and "/annons/" in href:
                 annons_url = "https://www.blocket.se" + href
-
-                referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={brand}+{model}&pe=2"
+                referens_url = "https://www.blocket.se/annonser/hela_sverige/fordon/bilar?pe=2"
                 ref_response = requests.get(referens_url, headers=headers)
                 ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
                 ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice-sc-__sc-1g0n27r-0"))
@@ -101,22 +100,25 @@ def search():
 
                 if prices:
                     avg_price = sum(prices) // len(prices)
-                    marginal = avg_price - max_price
+                    try:
+                        match_price = int(re.findall(r'\d+', title)[0])
+                    except:
+                        match_price = 0
+
+                    marginal = avg_price - match_price
                     if marginal >= min_margin:
-                        results.append(f"{annons_url} - 💰 Marginal: +{marginal} kr (Ref: {avg_price} kr)")
+                        resultat = f"💰 Fynd hittat!\n{title}\nPris: {match_price} kr\nRef: {avg_price} kr\nMarginal: +{marginal} kr\n{annons_url}"
+                        skicka_telegram(resultat)
+                        result_count += 1
 
                 time.sleep(1)
 
-        return '''<html><head><title>Resultat</title></head><body>
-            <h3>Matchande annonser:</h3>
-            <ul>
-            ''' + ''.join([f'<li><a href="{r.split(" - ")[0]}" target="_blank">{r}</a></li>' for r in results]) + '''
-            </ul>
-            <a href="/home">Tillbaka</a>
-        </body></html>'''
+        if result_count == 0:
+            skicka_telegram("Inga nya fynd denna gång.")
 
+        return "Autobot kördes utan fel."
     except Exception as e:
-        return f"<h2>Fel uppstod:</h2><pre>{str(e)}</pre>"
+        return f"Fel: {str(e)}"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
