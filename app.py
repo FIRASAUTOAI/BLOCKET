@@ -142,14 +142,12 @@ def autobot():
                         print('[DEBUG] Inga referenspriser hittades – använder fallbackvärde 0')
                         värde = 0
 
-                if värde > 0 and värde - match_price >= min_margin:
+                if True:
                     from datetime import datetime
                     datum = datetime.now().strftime('%Y-%m-%d %H:%M')
-                    resultat = f"""💰 Fynd hittat!
+                    resultat = f"""Bil hittad!
 {sökfras}
 Pris: {match_price} kr
-Marknadsvärde: {värde} kr
-Marginal: +{värde - match_price} kr
 {annons_url}
 ⏰ {datum}"""
                     fyndarkiv.append(f'<a href="{annons_url}" target="_blank">{resultat.replace(chr(10), "<br>")}</a>')
