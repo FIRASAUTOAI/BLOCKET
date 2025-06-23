@@ -99,7 +99,7 @@ def autobot():
                 annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
 
                 pris_text = annons_soup.get_text()
-                pris_match = re.search(r'(\d{2,3}[ \d]{0,3}) ?kr', pris_text)
+                pris_match = re.search(r'(\d[\d\s]{2,10}) ?kr', pris_text)
                 if not pris_match:
                     continue
                 try:
