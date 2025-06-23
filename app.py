@@ -70,7 +70,7 @@ def skicka_telegram(meddelande):
 def search():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return "Sökning återaktiverad - funktionalitet kommer här."
+    return redirect(url_for('autobot'))
 
 @app.route("/autobot")
 def autobot():
@@ -81,7 +81,7 @@ def autobot():
         soup = BeautifulSoup(response.text, 'html.parser')
         listings = soup.find_all("a", class_="Link-sc-__sc-1s9xv6a-0")
 
-        min_margin = 25000
+        min_margin = 20000
         result_count = 0
 
         for listing in listings:
