@@ -106,31 +106,35 @@ def autobot():
                 testade_annons_ids.add(annons_url)
                 annons_response = requests.get(annons_url, headers=headers)
                 annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
-                pris_tag = annons_soup.find("div", class_=re.compile("Price"))
-                if not pris_tag:
+
+                pris_text = annons_soup.get_text()
+                pris_match = re.search(r'(\d{2,3}[ \d]{0,3}) ?kr', pris_text)
+                if not pris_match:
                     continue
                 try:
-                    match_price = int(re.sub(r'[^0-9]', '', pris_tag.text))
+                    match_price = int(re.sub(r'[^0-9]', '', pris_match.group(1)))
                 except:
                     continue
-                regtext = annons_soup.get_text()
-                regnummer_match = re.search(r'([A-Z]{3}\d{3})', regtext)
-                huvudtitel = []
-                for ord in title.split():
-                    if re.search(r'[a-z]{1,4}\d{1,3}', ord):
-                        huvudtitel.append(ord)
+
+                regnummer_match = re.search(r'([A-Z]{3}\d{3})', pris_text)
+
+                nyckelord = ["volvo", "bmw", "audi", "vw", "mercedes", "v60", "v70", "golf", "passat", "a3", "a4", "a5", "d3", "d4", "tdi", "d5"]
+                huvudtitel = [ord for ord in title.split() if ord in nyckelord]
                 if not huvudtitel:
                     continue
                 sökfras = " ".join(huvudtitel)
+
                 värde = None
                 if regnummer_match:
                     regnummer = regnummer_match.group(1)
                     värde = hamta_varde_carinfo(regnummer)
+
                 if not värde:
                     referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}"
                     ref_response = requests.get(referens_url, headers=headers)
                     ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
                     ref_listings = ref_soup.find_all("div", class_=re.compile("Price"))
+
                     prices = []
                     for item in ref_listings:
                         try:
@@ -142,6 +146,7 @@ def autobot():
                             continue
                     if prices:
                         värde = sum(prices) // len(prices)
+
                 if värde and värde - match_price >= min_margin:
                     resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
                     fyndarkiv.append(resultat)
