@@ -114,7 +114,7 @@ def autobot():
                 förbjudna_ord = ["barnstol", "cykel", "soffa", "gungstol", "säng", "leksak", "skor", "möbel", "fåtölj", "crib", "båt"]
                 if any(ord in title for ord in förbjudna_ord):
                     continue
-                sökfras = " ".join(huvudtitel)" ".join(huvudtitel)
+                sökfras = " ".join(huvudtitel)
 
                 värde = None
                 
