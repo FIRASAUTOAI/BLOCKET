@@ -81,7 +81,7 @@ def search():
         for listing in listings:
             href = listing.get("href")
             title = listing.text.lower()
-            if href and "/annons/" in href and brand in title and model in title:
+            if href and "/annons/" in href and (brand in title or model in title):
                 annons_url = "https://www.blocket.se" + href
 
                 referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={brand}+{model}&pe=2"
@@ -120,4 +120,3 @@ def search():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
-
