@@ -109,12 +109,12 @@ def autobot():
 
                 regnummer_match = re.search(r'([A-Z]{3}\d{3})', pris_text)
 
-                nyckelord = session.get('custom_keywords', '').lower().split(',') if session.get('custom_keywords') else [
-    "volvo", "bmw", "audi", "vw", "volkswagen", "mercedes", "mazda", "toyota", "skoda", "peugeot", "citroen", "ford", "nissan", "kia", "hyundai", "renault", "honda", "opel", "seat", "fiat", "subaru", "suzuki", "chevrolet", "jeep", "dacia", "lexus", "tesla",
-    "v40", "v50", "v60", "v70", "s60", "s80", "golf", "passat", "a1", "a3", "a4", "a5", "a6", "d2", "d3", "d4", "d5", "tdi", "tsi", "tce"
-]
-                huvudtitel = title.split()
-                sökfras = " ".join(huvudtitel)
+                # nyckelord används inte längre
+                huvudtitel = title.split()[:4]
+                förbjudna_ord = ["barnstol", "cykel", "soffa", "gungstol", "säng", "leksak", "skor", "möbel", "fåtölj", "crib", "båt"]
+                if any(ord in title for ord in förbjudna_ord):
+                    continue
+                sökfras = " ".join(huvudtitel)" ".join(huvudtitel)
 
                 värde = None
                 
