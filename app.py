@@ -58,8 +58,7 @@ def likhet(a, b):
 
 def skicka_telegram(meddelande):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddela
-ge}
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
     requests.post(url, data=data)
 
 def hamta_varde_carinfo(regnummer):
