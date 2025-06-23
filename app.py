@@ -44,6 +44,7 @@ def home():
         Från årsmodell: <input type="number" name="min_year"><br>
         Nuvarande miltal: <input type="number" name="current_mileage"><br>
         Nuvarande årsmodell: <input type="number" name="current_year"><br>
+        Nyckelord (komma-separerade): <input type="text" name="keywords" value="volvo,bmw,audi,vw,mercedes,mazda,toyota,skoda,peugeot"><br>
         <input type="submit" value="Sök"></form>
         <h3><a href="/fynd">📦 Visa fyndarkiv</a></h3></body></html>'''
 
@@ -61,26 +62,11 @@ def skicka_telegram(meddelande):
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
     requests.post(url, data=data)
 
-def hamta_varde_carinfo(regnummer):
-    try:
-        url = f"https://www.car.info/sv-se/license-plate/SWE/{regnummer}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        match = soup.find(string=re.compile("Värdeintervall"))
-        if match:
-            siffror = re.findall(r'\d+', match)
-            if len(siffror) >= 2:
-                värde = (int(siffror[0]) + int(siffror[1])) // 2
-                return värde
-    except:
-        pass
-    return None
-
 @app.route("/search", methods=["POST"])
 def search():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
+    session['custom_keywords'] = request.form.get('keywords', '')
     return redirect(url_for('autobot'))
 
 @app.route("/autobot")
@@ -90,7 +76,7 @@ def autobot():
         min_margin = 15000
         result_count = 0
 
-        for page in range(1, 21):
+        for page in range(1, 51):
             url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?page={page}"
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -118,19 +104,19 @@ def autobot():
 
                 regnummer_match = re.search(r'([A-Z]{3}\d{3})', pris_text)
 
-                nyckelord = ["volvo", "bmw", "audi", "vw", "mercedes", "v60", "v70", "golf", "passat", "a3", "a4", "a5", "d3", "d4", "tdi", "d5"]
+                nyckelord = session.get('custom_keywords', '').lower().split(',') if session.get('custom_keywords') else [
+    "volvo", "bmw", "audi", "vw", "mercedes", "mazda", "toyota", "skoda", "peugeot", "citroen", "ford", "nissan", "kia", "hyundai", "renault", "honda", "opel", "seat", "fiat", "subaru", "suzuki", "chevrolet", "jeep", "dacia", "lexus", "tesla",
+    "v40", "v50", "v60", "v70", "s60", "s80", "golf", "passat", "a1", "a3", "a4", "a5", "a6", "d2", "d3", "d4", "d5", "tdi", "tsi", "tce"
+]
                 huvudtitel = [ord for ord in title.split() if ord in nyckelord]
                 if not huvudtitel:
                     continue
                 sökfras = " ".join(huvudtitel)
 
                 värde = None
-                if regnummer_match:
-                    regnummer = regnummer_match.group(1)
-                    värde = hamta_varde_carinfo(regnummer)
-
+                
                 if not värde:
-                    referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}"
+                    referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&f=dealer"
                     ref_response = requests.get(referens_url, headers=headers)
                     ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
                     ref_listings = ref_soup.find_all("div", class_=re.compile("Price"))
@@ -149,11 +135,11 @@ def autobot():
 
                 if värde and värde - match_price >= min_margin:
                     resultat = f"💰 Fynd hittat!\n{sökfras}\nPris: {match_price} kr\nMarknadsvärde: {värde} kr\nMarginal: +{värde - match_price} kr\n{annons_url}"
-                    fyndarkiv.append(resultat)
+                    fyndarkiv.append(f'<a href="{annons_url}" target="_blank">{resultat.replace(chr(10), "<br>")}</a>')
                     skicka_telegram(resultat)
                     result_count += 1
-                time.sleep(1)
-            time.sleep(2)
+                time.sleep(0.3)
+            time.sleep(0.5)
 
         if result_count == 0:
             skicka_telegram("Inga nya fynd denna gång.")
