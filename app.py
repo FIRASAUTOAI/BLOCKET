@@ -78,15 +78,17 @@ def autobot():
         headers = {"User-Agent": "Mozilla/5.0"}
         min_margin = 15000
         result_count = 0
+        testade_count = 0
 
         for page in range(1, 51):
-            url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?page={page}"
+            url = f"https://www.blocket.se/bilar/start?page={page}"
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             all_links = soup.find_all("a", href=True)
             listings = [a for a in all_links if "/annons/" in a["href"]]
 
             for listing in listings:
+                testade_count += 1
                 href = listing.get("href")
                 title = listing.text.lower()
                 annons_url = "https://www.blocket.se" + href
@@ -159,6 +161,7 @@ Marginal: +{värde - match_price} kr
         if result_count == 0:
             skicka_telegram("Inga nya fynd denna gång.")
 
+        skicka_telegram(f"✅ Autobot färdig. {result_count} fynd hittade efter att ha analyserat {testade_count} annonser.")
         return "Autobot kördes utan fel."
     except Exception as e:
         return f"Fel: {str(e)}"
