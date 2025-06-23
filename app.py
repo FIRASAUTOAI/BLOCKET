@@ -89,10 +89,20 @@ def autobot():
             title = listing.text.lower()
             if href and "/annons/" in href:
                 annons_url = "https://www.blocket.se" + href
+                annons_response = requests.get(annons_url, headers=headers)
+                annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
+                pris_tag = annons_soup.find("div", class_=re.compile("Price__StyledPrice"))
+                if not pris_tag:
+                    continue
+                try:
+                    match_price = int(re.sub(r'[^0-9]', '', pris_tag.text))
+                except:
+                    continue
+
                 referens_url = "https://www.blocket.se/annonser/hela_sverige/fordon/bilar?pe=2"
                 ref_response = requests.get(referens_url, headers=headers)
                 ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
-                ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice-sc-__sc-1g0n27r-0"))
+                ref_listings = ref_soup.find_all("div", class_=re.compile("Price__StyledPrice"))
 
                 prices = []
                 for item in ref_listings:
@@ -106,11 +116,6 @@ def autobot():
 
                 if prices:
                     avg_price = sum(prices) // len(prices)
-                    try:
-                        match_price = int(re.findall(r'\d+', title)[0])
-                    except:
-                        match_price = 0
-
                     marginal = avg_price - match_price
                     if marginal >= min_margin:
                         resultat = f"💰 Fynd hittat!\n{title}\nPris: {match_price} kr\nRef: {avg_price} kr\nMarginal: +{marginal} kr\n{annons_url}"
