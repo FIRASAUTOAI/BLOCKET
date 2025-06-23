@@ -66,6 +66,12 @@ def skicka_telegram(meddelande):
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
     requests.post(url, data=data)
 
+@app.route("/search", methods=["POST"])
+def search():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return "Sökning återaktiverad - funktionalitet kommer här."
+
 @app.route("/autobot")
 def autobot():
     try:
