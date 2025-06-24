@@ -1,169 +1,101 @@
-# FIRASAUTOAI - Automatiskt bilfyndsverktyg för Blocket med smart sökning, extern värdering och fyndarkiv
+# FIRASAUTOAI – Ren version utan realtidsutskrift, med Excel-export
 
-from flask import Flask, render_template, request, redirect, url_for, session
 import requests
 from bs4 import BeautifulSoup
 import re
 import time
-from difflib import SequenceMatcher
-
-app = Flask(__name__)
-app.secret_key = 'superhemligt_losen'
-
-TELEGRAM_BOT_TOKEN = '7548627749:AAHuRgWJLgwh-Yk-PJHFAmRhmCfKfY0hAow'
-TELEGRAM_CHAT_ID = '7819614595'
-
-fyndarkiv = []
+import pandas as pd
 from datetime import datetime
 
-fyndarkiv = []
-testade_annons_ids = set()  # Nollställs vid varje körning
+fynd = []
+ANTAL_SIDOR = 10  # 10 sidor x ~20 annonser = ca 200 annonser
+REFERENS_PER = 3
+PAUS_SEK = 1.5
 
-@app.route("/", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        if request.form['username'] == 'firas' and request.form['password'] == 'autoai123':
-            session['logged_in'] = True
-            return redirect(url_for('home'))
-        else:
-            return "Fel användarnamn eller lösenord. <a href='/'>Försök igen</a>."
-    return '''<html><head><title>Login - FIRASAUTOAI</title></head><body>
-        <h2>Logga in</h2><form method="post">
-        Användarnamn: <input type="text" name="username"><br>
-        Lösenord: <input type="password" name="password"><br>
-        <input type="submit" value="Logga in"></form></body></html>'''
+start_tid = time.time()
+antal_testade = 0
 
-@app.route("/home")
-def home():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    return '''<html><head><title>FIRASAUTOAI</title></head><body>
-        <h2>Sök Blocket-fynd</h2>
-        <form action="/search" method="post">
-        Märke: <input type="text" name="brand"><br>
-        Modell: <input type="text" name="model"><br>
-        Maxpris: <input type="number" name="max_price"><br>
-        Max mil: <input type="number" name="max_mileage"><br>
-        Från årsmodell: <input type="number" name="min_year"><br>
-        Nuvarande miltal: <input type="number" name="current_mileage"><br>
-        Nuvarande årsmodell: <input type="number" name="current_year"><br>
-        Nyckelord (komma-separerade): <input type="text" name="keywords" value="volvo,bmw,audi,vw,mercedes,mazda,toyota,skoda,peugeot"><br>
-        <input type="submit" value="Sök"></form>
-        <h3><a href="/fynd">📦 Visa fyndarkiv</a></h3></body></html>'''
+for page in range(1, ANTAL_SIDOR + 1):
+    url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?page={page}"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-@app.route("/fynd")
-def visa_fyndarkiv():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    return '<br>'.join(fyndarkiv) or "Inga fynd har loggats än."
+    länkar = soup.find_all("a", href=re.compile("/annons/"))
+    print(f"🔄 Sida {page}: {len(länkar)} annonser hämtade")
 
-def likhet(a, b):
-    return SequenceMatcher(None, a, b).ratio()
+    for länk in länkar:
+        annons_url = "https://www.blocket.se" + länk["href"]
+        annons_respons = requests.get(annons_url)
+        annons_html = BeautifulSoup(annons_respons.text, 'html.parser')
 
-def skicka_telegram(meddelande):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": meddelande}
-    requests.post(url, data=data)
+        text = annons_html.get_text().lower()
 
-@app.route("/search", methods=["POST"])
-def search():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    session['custom_keywords'] = request.form.get('keywords', '')
-    return redirect(url_for('autobot'))
+        pris_match = re.search(r'(\d[\d\s]{2,10}) ?kr', text)
+        mil_match = re.search(r'(\d[\d\s]{2,6}) ?mil', text)
+        år_match = re.search(r'20\d{2}', text)
+        title_tag = annons_html.find("title")
+        title = title_tag.get_text().lower() if title_tag else ""
 
-@app.route("/autobot")
-def autobot():
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        min_margin = 10000
-        result_count = 0
-        testade_count = 0
+        try:
+            pris = int(pris_match.group(1).replace(" ", "")) if pris_match else None
+            mil = int(mil_match.group(1).replace(" ", "")) if mil_match else None
+            år = int(år_match.group(0)) if år_match else None
+        except:
+            continue
 
-        for page in range(1, 51):
-            url = f"https://www.blocket.se/bilar/start?page={page}"
-            response = requests.get(url, headers=headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            all_links = soup.find_all("a", href=True)
-            listings = [a for a in all_links if "/annons/" in a["href"]]
+        if not pris or not mil or not år:
+            continue
 
-            for listing in listings:
-                testade_count += 1
-                href = listing.get("href")
-                title = listing.text.lower()
-                annons_url = "https://www.blocket.se" + href
-                if annons_url in testade_annons_ids:
-                    continue
-                testade_annons_ids.add(annons_url)
-                annons_response = requests.get(annons_url, headers=headers)
-                annons_soup = BeautifulSoup(annons_response.text, 'html.parser')
+        antal_testade += 1
 
-                pris_text = annons_soup.get_text()
-                pris_match = re.search(r'(\d[\d\s]{2,10}) ?kr', pris_text)
-                if not pris_match:
-                    continue
+        
+        huvudtitel = title.split()
+        sökfras = " ".join([ord for ord in huvudtitel if ord not in ["till", "salu", "euro", "nybesiktigad"]][:3])
+        referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={sökfras.replace(' ', '+')}"
+        referens_response = requests.get(referens_url)
+        referens_soup = BeautifulSoup(referens_response.text, 'html.parser')
+        referens_annonser = referens_soup.find_all("a", href=re.compile("/annons/"))
+
+        referenspriser = []
+        for ref_länk in referens_annonser[:7]:
+            ref_url = "https://www.blocket.se" + ref_länk["href"]
+            ref_resp = requests.get(ref_url)
+            ref_html = BeautifulSoup(ref_resp.text, 'html.parser')
+            ref_text = ref_html.get_text().lower()
+            ref_pris_match = re.search(r'(\d[\d\s]{2,10}) ?kr', ref_text)
+            if ref_pris_match:
                 try:
-                    match_price = int(re.sub(r'[^0-9]', '', pris_match.group(1)))
+                    p = int(ref_pris_match.group(1).replace(" ", ""))
+                    referenspriser.append(p)
                 except:
                     continue
 
-                regnummer_match = re.search(r'([A-Z]{3}\d{3})', pris_text)
+        if referenspriser:
+            snittpris = sum(referenspriser) // len(referenspriser)
+            marginal = snittpris - pris
+            fynd.append((pris, mil, år, annons_url, marginal, snittpris))
+            print(f"✅ {pris} kr | {mil} mil | {år} – Marginal: {marginal} kr (Snitt: {snittpris})
+🔗 {annons_url}
+")
 
-                # nyckelord används inte längre
-                huvudtitel = title.split()[:4]
-                förbjudna_ord = ["barnstol", "cykel", "soffa", "gungstol", "säng", "leksak", "skor", "möbel", "fåtölj", "crib", "båt"]
-                if any(ord in title for ord in förbjudna_ord):
-                    continue
-                sökfras = " ".join(huvudtitel)
+    time.sleep(PAUS_SEK)
 
-                värde = None
-                
-                if not värde:
-                    referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={'+'.join(huvudtitel)}&f=dealer"
-                    print(f'[DEBUG] Sökfras: {sökfras}')
-                    print(f'[DEBUG] Referens-URL: {referens_url}')
-                    ref_response = requests.get(referens_url, headers=headers)
-                    ref_soup = BeautifulSoup(ref_response.text, 'html.parser')
-                    ref_listings = ref_soup.find_all("div", class_=re.compile("Price"))
+# 📋 Slutresultat
+for f in fynd:
+    print(f"✅ Pris: {f[0]} kr | Mil: {f[1]} | År: {f[2]} | Marginal: {f[4]} kr (Snittpris: {f[5]} kr)\n🔗 {f[3]}\n")
 
-                    prices = []
-                    for item in ref_listings:
-                        try:
-                            price = int(re.sub(r'[^0-9]', '', item.text))
-                            prices.append(price)
-                            if len(prices) >= 7:
-                                break
-                        except:
-                            continue
-                    if prices:
-                        print(f'[DEBUG] Referenspriser: {prices}')
-                        värde = sum(prices) // len(prices)
-                    else:
-                        print('[DEBUG] Inga referenspriser hittades – använder fallbackvärde 0')
-                        värde = 0
+if not fynd:
+    print("❌ Inga bilannonser hittades – eller inga jämförpriser kunde beräknas.")
 
-                if True:
-                    from datetime import datetime
-                    datum = datetime.now().strftime('%Y-%m-%d %H:%M')
-                    resultat = f"""Bil hittad!
-{sökfras}
-Pris: {match_price} kr
-{annons_url}
-⏰ {datum}"""
-                    fyndarkiv.append(f'<a href="{annons_url}" target="_blank">{resultat.replace(chr(10), "<br>")}</a>')
-                    skicka_telegram(resultat)
-                    result_count += 1
-                time.sleep(0.3)
-            time.sleep(0.5)
+slut_tid = time.time()
+print("\n🔢 Statistik:")
+print(f"🔎 Analyserade annonser: {antal_testade}")
+print(f"💰 Fynd hittade: {len(fynd)}")
+print(f"⏱️ Tid totalt: {round(slut_tid - start_tid, 1)} sekunder")
 
-        if result_count == 0:
-            skicka_telegram("Inga nya fynd denna gång.")
-
-        skicka_telegram(f"✅ Autobot färdig. {result_count} fynd hittade efter att ha analyserat {testade_count} annonser.")
-        return "Autobot kördes utan fel."
-    except Exception as e:
-        print(f"[FEL] Ett fel inträffade i autobot: {e}")
-        return f"Fel: {str(e)}"
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+# 💾 Spara till Excel
+if fynd:
+    df = pd.DataFrame(fynd, columns=["Pris", "Mil", "År", "Länk", "Marginal", "Snittpris"])
+    filename = f"fynd_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    df.to_excel(filename, index=False)
+    print(f"📁 Excel-fil sparad: {filename}")
