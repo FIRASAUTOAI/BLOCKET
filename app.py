@@ -9,7 +9,6 @@ from datetime import datetime
 
 fynd = []
 ANTAL_SIDOR = 10  # 10 sidor x ~20 annonser = ca 200 annonser
-REFERENS_PER = 3
 PAUS_SEK = 1.5
 
 start_tid = time.time()
@@ -48,7 +47,6 @@ for page in range(1, ANTAL_SIDOR + 1):
 
         antal_testade += 1
 
-        
         huvudtitel = title.split()
         sökfras = " ".join([ord for ord in huvudtitel if ord not in ["till", "salu", "euro", "nybesiktigad"]][:3])
         referens_url = f"https://www.blocket.se/annonser/hela_sverige/fordon/bilar?q={sökfras.replace(' ', '+')}"
@@ -74,9 +72,7 @@ for page in range(1, ANTAL_SIDOR + 1):
             snittpris = sum(referenspriser) // len(referenspriser)
             marginal = snittpris - pris
             fynd.append((pris, mil, år, annons_url, marginal, snittpris))
-            print(f"✅ {pris} kr | {mil} mil | {år} – Marginal: {marginal} kr (Snitt: {snittpris})
-🔗 {annons_url}
-")
+            print(f"✅ {pris} kr | {mil} mil | {år} – Marginal: {marginal} kr (Snitt: {snittpris})\n🔗 {annons_url}\n")
 
     time.sleep(PAUS_SEK)
 
